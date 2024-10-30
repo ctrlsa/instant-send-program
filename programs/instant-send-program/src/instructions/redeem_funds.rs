@@ -1,3 +1,4 @@
+//file: src/instructions/redeem_funds.rs
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, Transfer};
@@ -17,16 +18,18 @@ pub struct RedeemFundsSPL<'info> {
         close = sender,
     )]
     pub escrow_account: Account<'info, EscrowAccount>,
-    #[account(mut)]
+    #[account(mut, owner = token::ID,)]
     pub escrow_token_account: Account<'info, TokenAccount>,
     #[account(
         init_if_needed,
         payer = escrow_account,
         associated_token::mint = token_mint,
         associated_token::authority = recipient,
+        owner = token::ID,
+        
     )]
     pub recipient_token_account: Account<'info, TokenAccount>,
-    #[account(address = escrow_account.token_mint)]
+    #[account(address = escrow_account.token_mint, owner = token::ID,)]
     pub token_mint: Account<'info, Mint>,
     #[account(mut, address = escrow_account.sender)]
     /// CHECK: This is safe because we check the address

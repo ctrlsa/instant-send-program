@@ -20,10 +20,12 @@ pub struct InitializeTransferSPL<'info> {
         payer = sender,
         associated_token::mint = token_mint,
         associated_token::authority = escrow_account,
+        owner = token::ID,
     )]
     pub escrow_token_account: Account<'info, TokenAccount>,
-    #[account(mut)]
+    #[account(mut, owner = token::ID)]
     pub sender_token_account: Account<'info, TokenAccount>,
+    #[account(owner = token::ID)]
     pub token_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,

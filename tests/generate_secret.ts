@@ -1,20 +1,20 @@
 import * as crypto from "crypto";
 
-// Step 1: Generate a secure random secret
+
 const generateSecret = (length: number = 32): string => {
-    return crypto.randomBytes(length).toString("hex"); // Generates a hexadecimal string
+    return crypto.randomBytes(length).toString("hex"); 
 };
 
-// Step 2: Hash the secret using SHA-256
+
 const hashSecret = (secret: string): string => {
-    const hash = crypto.createHash("sha256"); // SHA-256 hashing algorithm
+    const hash = crypto.createHash("sha256"); 
     hash.update(secret);
-    return hash.digest("hex"); // Returns the hashed secret as a hexadecimal string
+    return hash.digest("hex"); 
 };
 
-// Usage
-const secret = generateSecret(); // Generate a 32-byte random secret
+
+const secret = generateSecret(); 
 console.log("Generated Secret:", secret);
 
-const hashedSecret = hashSecret(secret); // Hash the generated secret
+const hashedSecret = hashSecret(secret); 
 console.log("Hashed Secret:", hashedSecret);
