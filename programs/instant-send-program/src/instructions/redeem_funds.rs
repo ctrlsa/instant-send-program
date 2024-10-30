@@ -57,30 +57,26 @@ pub struct RedeemFundsSOL<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Redeem funds for SPL tokens
+// Redeem funds for SPL tokens
 pub fn redeem_funds_spl(ctx: Context<RedeemFundsSPL>, secret: String) -> Result<()> {
     //let escrow_account = &mut ctx.accounts.escrow_account;
-
-    // Hash the provided secret
     let provided_hash = {
         let mut hasher = Sha256::new();
         hasher.update(secret.as_bytes());
         hasher.finalize()
     };
 
-    // Verify the secret
     require!(
         provided_hash[..] == ctx.accounts.escrow_account.hash_of_secret,
         CustomError::InvalidSecret
     );
 
-    // Ensure funds haven't been redeemed yet
     require!(
         !ctx.accounts.escrow_account.is_redeemed,
         CustomError::AlreadyRedeemed
     );
 
-    // Mark as redeemed
+
     ctx.accounts.escrow_account.is_redeemed = true;
 
     // Transfer tokens to recipient
@@ -128,16 +124,16 @@ pub fn redeem_funds_sol(ctx: Context<RedeemFundsSOL>, secret: String) -> Result<
         hasher.finalize()
     };
 
-    // Verify the secret
+
     require!(
         provided_hash[..] == escrow_account.hash_of_secret,
         CustomError::InvalidSecret
     );
 
-    // Ensure funds haven't been redeemed yet
+
     require!(!escrow_account.is_redeemed, CustomError::AlreadyRedeemed);
 
-    // Mark as redeemed
+
     escrow_account.is_redeemed = true;
 
     // Transfer SOL to recipient
