@@ -8,13 +8,12 @@ use crate::{
 };
 
 #[derive(Accounts)]
-#[instruction(hash_of_secret: [u8; 32])]
+#[instruction(amount: u64, expiration_time: i64, hash_of_secret: [u8; 32])]
 pub struct InitializeTransferSPL<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
-    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowAccount::INIT_SPACE, seeds = [SEED_ESCROW_SPL, sender.key().as_ref(), &hash_of_secret], bump)]
+    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowAccount::INIT_SPACE, seeds = [SEED_ESCROW_SPL, &hash_of_secret[..]], bump)]
     pub escrow_account: Account<'info, EscrowAccount>,
-    // hash_of_secret: [u8; 32], unique_seed(public key) could be added here
     #[account(
         init,
         payer = sender,
@@ -35,11 +34,11 @@ pub struct InitializeTransferSPL<'info> {
 
 // Account structures for SOL
 #[derive(Accounts)]
-#[instruction(hash_of_secret: [u8; 32])]
+#[instruction(amount: u64, expiration_time: i64, hash_of_secret: [u8; 32])]
 pub struct InitializeTransferSOL<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
-    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowSOLAccount::INIT_SPACE, seeds = [SEED_ESCROW_SOL, sender.key().as_ref(), &hash_of_secret], bump)]
+    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowSOLAccount::INIT_SPACE, seeds = [SEED_ESCROW_SOL, &hash_of_secret[..]], bump)]
     pub escrow_account: Account<'info, EscrowSOLAccount>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
@@ -48,7 +47,7 @@ pub struct InitializeTransferSOL<'info> {
 pub fn initialize_transfer_spl(
     ctx: Context<InitializeTransferSPL>,
     amount: u64,
-    expiration_time: i64, // Use i64 for Unix timestamp
+    expiration_time: i64,
     hash_of_secret: [u8; 32],
 ) -> Result<()> {
     let escrow_account = &mut ctx.accounts.escrow_account;
@@ -76,13 +75,16 @@ pub fn initialize_transfer_spl(
     token::transfer(cpi_ctx, amount)?;
 
     let total_lamports = recipient_token_account_rent;
-    **ctx.accounts.sender.to_account_info().lamports.borrow_mut() -= total_lamports;
-    **ctx
-        .accounts
-        .escrow_account
-        .to_account_info()
-        .lamports
-        .borrow_mut() += total_lamports;
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer {
+                from: ctx.accounts.sender.to_account_info(),
+                to: escrow_account.to_account_info(),
+            },
+        ),
+        total_lamports,
+    )?;
 
     Ok(())
 }
@@ -102,9 +104,16 @@ pub fn initialize_transfer_sol(
     escrow_account.hash_of_secret = hash_of_secret;
     escrow_account.bump = ctx.bumps.escrow_account;
 
-    // Transfer SOL to the escrow account
-    **escrow_account.to_account_info().lamports.borrow_mut() += amount;
-    **ctx.accounts.sender.to_account_info().lamports.borrow_mut() -= amount;
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer {
+                from: ctx.accounts.sender.to_account_info(),
+                to: escrow_account.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
 
     Ok(())
 }
