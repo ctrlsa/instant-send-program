@@ -31,19 +31,6 @@ pub struct InitializeTransferSPL<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub rent: Sysvar<'info, Rent>,
 }
-
-// Account structures for SOL
-#[derive(Accounts)]
-#[instruction(amount: u64, expiration_time: i64, hash_of_secret: [u8; 32])]
-pub struct InitializeTransferSOL<'info> {
-    #[account(mut)]
-    pub sender: Signer<'info>,
-    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowSOLAccount::INIT_SPACE, seeds = [SEED_ESCROW_SOL, &hash_of_secret[..]], bump)]
-    pub escrow_account: Account<'info, EscrowSOLAccount>,
-    pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
-}
-
 pub fn initialize_transfer_spl(
     ctx: Context<InitializeTransferSPL>,
     amount: u64,
@@ -61,8 +48,8 @@ pub fn initialize_transfer_spl(
     escrow_account.hash_of_secret = hash_of_secret;
     escrow_account.bump = ctx.bumps.escrow_account;
 
-    let rent = Rent::get()?;
-    let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
+    // let rent = Rent::get()?;
+    // let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
 
     // Transfer tokens from sender to escrow token account
     let cpi_program = ctx.accounts.token_program.to_account_info();
@@ -74,19 +61,31 @@ pub fn initialize_transfer_spl(
     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
     token::transfer(cpi_ctx, amount)?;
 
-    let total_lamports = recipient_token_account_rent;
-    anchor_lang::system_program::transfer(
-        CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            anchor_lang::system_program::Transfer {
-                from: ctx.accounts.sender.to_account_info(),
-                to: escrow_account.to_account_info(),
-            },
-        ),
-        total_lamports,
-    )?;
+    // let total_lamports = recipient_token_account_rent;
+    // anchor_lang::system_program::transfer(
+    //     CpiContext::new(
+    //         ctx.accounts.system_program.to_account_info(),
+    //         anchor_lang::system_program::Transfer {
+    //             from: ctx.accounts.sender.to_account_info(),
+    //             to: escrow_account.to_account_info(),
+    //         },
+    //     ),
+    //     total_lamports,
+    // )?;
 
     Ok(())
+}
+
+// Account structures for SOL
+#[derive(Accounts)]
+#[instruction(amount: u64, expiration_time: i64, hash_of_secret: [u8; 32])]
+pub struct InitializeTransferSOL<'info> {
+    #[account(mut)]
+    pub sender: Signer<'info>,
+    #[account(init, payer = sender, space = ANCHOR_DISCRIMINATOR_SIZE + EscrowSOLAccount::INIT_SPACE, seeds = [SEED_ESCROW_SOL, &hash_of_secret[..]], bump)]
+    pub escrow_account: Account<'info, EscrowSOLAccount>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 pub fn initialize_transfer_sol(

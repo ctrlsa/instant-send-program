@@ -1,12 +1,14 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, Connection } from "@solana/web3.js";
 import {
-  createMint,
-  getOrCreateAssociatedTokenAccount,
-  mintTo,
-  TOKEN_PROGRAM_ID
-} from "@solana/spl-token";
+    TOKEN_PROGRAM_ID,
+    MintLayout,
+    createInitializeMintInstruction,
+    getAssociatedTokenAddressSync,
+    createAssociatedTokenAccountInstruction,
+    createMintToInstruction,
+  } from "@solana/spl-token";
 
 import { BankrunProvider, startAnchor } from "anchor-bankrun";
 import { BanksClient } from "solana-bankrun";
@@ -15,12 +17,26 @@ import { InstantSendProgram } from "../target/types/instant_send_program";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import { Key } from "readline";
 
 const IDL = require("../target/idl/instant_send_program");
 const programAddress = new PublicKey(
   "4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW"
 );
 const directory = path.join(__dirname);
+
+async function fundWalletFromDefaultWallet(provider: BankrunProvider, payerWallet: Keypair, toBeFundedWallet: Keypair, amount: number) {
+    const transaction = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+            fromPubkey: payerWallet.publicKey,
+            toPubkey: toBeFundedWallet.publicKey,
+            lamports: amount * anchor.web3.LAMPORTS_PER_SOL,
+        })
+    );
+
+    await provider.sendAndConfirm(transaction, [payerWallet]);
+    console.log("Funded senderWallet with 2 SOL");
+}
 
 function loadKeypair(filename: string): Keypair {
   const filePath = path.join(directory, `${filename}.json`);
@@ -43,9 +59,9 @@ const hashSecret = (secret: string): Buffer => {
 };
 describe("Instant Transfer", () => {
   const senderWallet = loadKeypair("sender");
-  // const receiverWallet = loadKeypair("receiver");
-  // const centralFeePayerWallet = loadKeypair("central_fee_payer_wallet");
-
+  const receiverWallet = loadKeypair("receiver");
+  const centralFeePayerWallet = loadKeypair("central_fee_payer_wallet");
+  
   let context;
   let provider: BankrunProvider;
   let transferProgram: Program<InstantSendProgram>;
@@ -53,12 +69,81 @@ describe("Instant Transfer", () => {
   let banksClient: BanksClient;
   let tokenMint: PublicKey;
   let senderTokenAccount: PublicKey;
+  let defaultWallet: Keypair;
   before("set Init vars", async () => {
-    await provider.connection.requestAirdrop(senderWallet.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
+    
     context = await startAnchor("", [{ name: "instant_send_program", programId: programAddress }], []);
     ({ banksClient, payer } = context);
-
+    defaultWallet = payer;
     provider = new BankrunProvider(context);
+    
+    await fundWalletFromDefaultWallet(provider, defaultWallet, senderWallet, 2);
+    await fundWalletFromDefaultWallet(provider, defaultWallet, centralFeePayerWallet, 1);
+
+    const mintAuthority = Keypair.generate();
+    const freezeAuthority = null;
+    const decimals = 9;
+
+    const mintKeypair = Keypair.generate();
+    const lamportsForMint = await provider.connection.getMinimumBalanceForRentExemption(MintLayout.span);
+
+    const mintTransaction = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.createAccount({
+            fromPubkey: payer.publicKey,
+            newAccountPubkey: mintKeypair.publicKey,
+            space: MintLayout.span,
+            lamports: lamportsForMint,
+            programId: TOKEN_PROGRAM_ID,
+        }),
+        createInitializeMintInstruction(
+            mintKeypair.publicKey,
+            decimals,
+            mintAuthority.publicKey,
+            freezeAuthority,
+            TOKEN_PROGRAM_ID,
+        )
+    );
+
+    await provider.sendAndConfirm(mintTransaction, [payer, mintKeypair])
+
+    senderTokenAccount = getAssociatedTokenAddressSync(
+        mintKeypair.publicKey,
+        //defaultWallet.publicKey
+        senderWallet.publicKey
+    )
+
+    const ataTransaction = new anchor.web3.Transaction().add(
+        createAssociatedTokenAccountInstruction(
+            payer.publicKey,
+            senderTokenAccount,
+            //defaultWallet.publicKey,
+            senderWallet.publicKey,
+            mintKeypair.publicKey,
+            TOKEN_PROGRAM_ID
+        )
+    );
+
+    await provider.sendAndConfirm(ataTransaction, [payer])
+ 
+    const mintToTransaction = new anchor.web3.Transaction().add(
+        createMintToInstruction(
+        mintKeypair.publicKey,
+        senderTokenAccount,
+        mintAuthority.publicKey,
+        1_000_000_000, // Amount to mint
+        [],
+        TOKEN_PROGRAM_ID
+        )
+    );
+
+    await provider.sendAndConfirm(mintToTransaction, [payer, mintAuthority]);
+
+    
+    tokenMint = mintKeypair.publicKey;
+
+    //console.log("this is the tokenMint address", tokenMint)
+
+
 
     transferProgram = new Program<InstantSendProgram>(
       IDL,
@@ -83,6 +168,8 @@ describe("Instant Transfer", () => {
 
 
   });
+
+
   //it.only
   it.skip("Initialize Transfer SOL", async () => {
     const amount = new anchor.BN(0.2 * anchor.web3.LAMPORTS_PER_SOL); // 0.2 SOL
@@ -108,11 +195,15 @@ describe("Instant Transfer", () => {
     console.log("Derived PDA in Test:", escrowAccountPDASol.toBase58());
     console.log("Derived PDA Bump:", escrowAccountBumpSol);
 
-    const txSignature = await transferProgram.methods.initializeTransferSol(amount, expirationTime, hashOfSecret).accounts({ escrowAccount: escrowAccountPDASol } as any).rpc();
+    const txSignature = await transferProgram.methods.initializeTransferSol(amount, expirationTime, hashOfSecret).accounts({sender: senderWallet.publicKey, escrowAccount: escrowAccountPDASol } as any).signers([senderWallet]).rpc();
 
     const escrower = await transferProgram.account.escrowSolAccount.fetch(escrowAccountPDASol);
-
     console.log(escrower)
+    
+    const escrowAccountInfo = await provider.connection.getAccountInfo(escrowAccountPDASol);
+    console.log('Escrow Account Lamports:', escrowAccountInfo.lamports);
+
+    
   });
 
   it("Initialize Transger SPL", async () => {
@@ -125,13 +216,107 @@ describe("Instant Transfer", () => {
         `Hash must be exactly 32 bytes. Got ${hashOfSecret.length} bytes`
       );
     }
-    const [escrowAccountPDASpl] = await anchor.web3.PublicKey.findProgramAddressSync(
+    const [escrowAccountPDASpl, escrowAccountBumpSpl] = await anchor.web3.PublicKey.findProgramAddressSync(
       [SEED_ESCROW_SPL, hashOfSecret],
       programAddress
     );
     console.log("Derived spl escrow account", escrowAccountPDASpl.toBase58())
+    const txSignature = await transferProgram.methods.initializeTransferSpl(amount, expirationTime, hashOfSecret).accounts({
+        sender: senderWallet.publicKey,
+        escrowAccount: escrowAccountPDASpl,
+        tokenMint: tokenMint,
+        senderTokenAccount: senderTokenAccount,
+    } as any).signers([senderWallet]).rpc();
 
+    console.log("Transaction Signature: ", txSignature);
+
+    // Fetch and log escrow account state
+    const escrowAccount = await transferProgram.account.escrowAccount.fetch(escrowAccountPDASpl);
+    console.log("Escrow Account State:", escrowAccount);
 
   });
+
+  it.skip("Redeem funds from Escrow wallet Native SOL", async() => {
+        const [escrowAccountPDASol, escrowAccountBumpSol] = await anchor.web3.PublicKey.findProgramAddressSync(
+            [SEED_ESCROW_SOL, hashOfSecret],
+            programAddress
+        );
+        const escrowAccountInfoBefore = await provider.connection.getAccountInfo(escrowAccountPDASol);
+        const senderAccountInfoBefore = await provider.connection.getAccountInfo(senderWallet.publicKey);
+        //const receiverAccountInfoBefore = await provider.connection.getAccountInfo(receiverWallet.publicKey);
+
+        console.log('Escrow Account Balance Before Redemption (Lamports):', escrowAccountInfoBefore?.lamports);
+        console.log('Sender Account Balance Before Redemption (Lamports):', senderAccountInfoBefore?.lamports);
+        //console.log('Receiver Account Balance Before Redemption (Lamports):', receiverAccountInfoBefore?.lamports);
+
+        const txSignature = await transferProgram.methods.redeemFundsSol(secret).accounts({signer: centralFeePayerWallet.publicKey, sender: senderWallet.publicKey, recipient: receiverWallet.publicKey, escrowAccount: escrowAccountPDASol}).signers([centralFeePayerWallet]).rpc();
+        
+        // Fetch and print balances after redemption
+        //const escrowAccountInfoAfter = await provider.connection.getAccountInfo(escrowAccountPDASol);
+        const senderAccountInfoAfter = await provider.connection.getAccountInfo(senderWallet.publicKey);
+        const receiverAccountInfoAfter = await provider.connection.getAccountInfo(receiverWallet.publicKey);
+
+        //console.log('Escrow Account Balance After Redemption (Lamports):', escrowAccountInfoAfter?.lamports);
+        console.log('Sender Account Balance After Redemption (Lamports):', senderAccountInfoAfter?.lamports);
+        console.log('Receiver Account Balance After Redemption (Lamports):', receiverAccountInfoAfter?.lamports);
+ 
+    });
+
+  it("Redeem funds from Escrow Wallet SPL", async() => {
+    const [escrowAccountPDASpl, escrowAccountBumpSpl] = await anchor.web3.PublicKey.findProgramAddressSync(
+        [SEED_ESCROW_SPL, hashOfSecret],
+        programAddress
+    );
+
+    const recipientTokenAccount = getAssociatedTokenAddressSync(
+        tokenMint,
+        receiverWallet.publicKey
+    );
+
+    const escrowTokenAccount = getAssociatedTokenAddressSync(
+        tokenMint,
+        escrowAccountPDASpl,
+        true // This specifies that the escrow PDA is a program-derived address
+    );
+
+    // const escrowAccountInfoBefore = await provider.connection.getAccountInfo(escrowAccountPDASpl);
+    // const senderAccountInfoBefore = await provider.connection.getAccountInfo(senderWallet.publicKey);
+    // const centralFeePayerWalletInfo = await provider.connection.getAccountInfo(centralFeePayerWallet.publicKey)
+
+    // console.log('Escrow Account Balance Before Redemption (Lamports):', escrowAccountInfoBefore?.lamports);
+    // console.log('Sender Account Balance Before Redemption (Lamports):', senderAccountInfoBefore?.lamports);
+    // console.log('centralFeePayerWalletInfo Account Balance Before Redemption (Lamports):', centralFeePayerWalletInfo?.lamports);
+
+    // console.log('Signer Public Key:', centralFeePayerWallet.publicKey.toBase58());
+    // console.log('Recipient Public Key:', receiverWallet.publicKey.toBase58());
+    // console.log('Sender Public Key:', senderWallet.publicKey.toBase58());
+    // console.log('Escrow Account PDA:', escrowAccountPDASpl.toBase58());
+    // console.log('Escrow Token Account:', escrowTokenAccount.toBase58());
+    // console.log('Recipient Token Account:', recipientTokenAccount.toBase58());
+    
+    // Execute the redemption function and get the transaction signature
+    const txSignature = await transferProgram.methods
+        .redeemFundsSpl(secret)
+        .accounts({
+            signer: centralFeePayerWallet.publicKey,
+            recipient: receiverWallet.publicKey,
+            sender: senderWallet.publicKey,
+            escrowAccount: escrowAccountPDASpl,
+            escrowTokenAccount: escrowTokenAccount,
+            recipientTokenAccount: recipientTokenAccount,
+            tokenMint: tokenMint,
+        }as any)
+        .signers([centralFeePayerWallet])
+        .rpc();
+
+    console.log("Transaction Signature:", txSignature);
+
+    // // Fetch and print balances after redemption
+    // const finalRecipientSolBalance = await provider.connection.getBalance(receiverWallet.publicKey);
+    // console.log("Recipient SOL Balance After Redemption (Lamports):", finalRecipientSolBalance);
+
+    // const finalRecipientTokenBalance = await provider.connection.getTokenAccountBalance(recipientTokenAccount);
+    // console.log("Recipient SPL Token Balance After Redemption:", finalRecipientTokenBalance.value.amount);
+});
 
 });

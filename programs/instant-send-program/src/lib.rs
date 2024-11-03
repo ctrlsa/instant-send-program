@@ -33,11 +33,6 @@ pub mod instant_send_program {
         instructions::redeem_funds::redeem_funds_spl(ctx, secret)
     }
 
-    // pub fn refund_funds_spl(ctx: Context<RefundFundsSPL>) -> Result<()> {
-    //     instructions::refund_funds::refund_funds_spl(ctx)
-    // }
-
-    // SOL functions
     pub fn initialize_transfer_sol(
         ctx: Context<InitializeTransferSOL>,
         amount: u64,
