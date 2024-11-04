@@ -1,0 +1,5 @@
+test/* linguist-vendored
+
+*.rs linguist-language=Rust
+
+*.ts linguist-vendored
