@@ -9,5 +9,4 @@ pub struct EscrowSOLAccount {
     pub is_redeemed: bool,
     pub hash_of_secret: [u8; 32],
     pub bump: u8,
-
 }

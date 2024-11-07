@@ -4,7 +4,6 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-//use instructions::{initialize_transfer::*, redeem_funds::*, refund_funds::*};
 pub use constants::*;
 use instructions::*;
 pub use state::*;

@@ -31,6 +31,37 @@ pub struct InitializeTransferSPL<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub rent: Sysvar<'info, Rent>,
 }
+
+impl<'info> InitializeTransferSPL<'info> {
+    pub fn into_transfer_to_escrow_context(
+        &self,
+    ) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        let cpi_accounts = Transfer {
+            from: self.sender_token_account.to_account_info(),
+            to: self.escrow_token_account.to_account_info(),
+            authority: self.sender.to_account_info(),
+        };
+        CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
+    }
+
+    pub fn cliam_rent_from_sender(&self) -> Result<()> {
+        let rent = Rent::get()?;
+        let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                self.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: self.sender.to_account_info(),
+                    to: self.escrow_account.to_account_info(),
+                },
+            ),
+            recipient_token_account_rent,
+        )?;
+        Ok(())
+    }
+}
+
 pub fn initialize_transfer_spl(
     ctx: Context<InitializeTransferSPL>,
     amount: u64,
@@ -39,7 +70,6 @@ pub fn initialize_transfer_spl(
 ) -> Result<()> {
     let escrow_account = &mut ctx.accounts.escrow_account;
 
-    // Initialize escrow account data
     escrow_account.sender = *ctx.accounts.sender.key;
     escrow_account.amount = amount;
     escrow_account.expiration_time = expiration_time;
@@ -48,30 +78,10 @@ pub fn initialize_transfer_spl(
     escrow_account.hash_of_secret = hash_of_secret;
     escrow_account.bump = ctx.bumps.escrow_account;
 
-    // let rent = Rent::get()?;
-    // let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
+    token::transfer(ctx.accounts.into_transfer_to_escrow_context(), amount)?;
 
-    // Transfer tokens from sender to escrow token account
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.sender_token_account.to_account_info(),
-        to: ctx.accounts.escrow_token_account.to_account_info(),
-        authority: ctx.accounts.sender.to_account_info(),
-    };
-    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-    token::transfer(cpi_ctx, amount)?;
-
-    // let total_lamports = recipient_token_account_rent;
-    // anchor_lang::system_program::transfer(
-    //     CpiContext::new(
-    //         ctx.accounts.system_program.to_account_info(),
-    //         anchor_lang::system_program::Transfer {
-    //             from: ctx.accounts.sender.to_account_info(),
-    //             to: escrow_account.to_account_info(),
-    //         },
-    //     ),
-    //     total_lamports,
-    // )?;
+    //if you for some reason want to claim the rent for creating a token account for the reciever
+    //ctx.accounts.claim_rent_from_sender()?;
 
     Ok(())
 }
@@ -86,6 +96,18 @@ pub struct InitializeTransferSOL<'info> {
     pub escrow_account: Account<'info, EscrowSOLAccount>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+impl<'info> InitializeTransferSOL<'info> {
+    pub fn into_transfer_sol_context(
+        &self,
+    ) -> CpiContext<'_, '_, '_, 'info, anchor_lang::system_program::Transfer<'info>> {
+        let transfer_instruction = anchor_lang::system_program::Transfer {
+            from: self.sender.to_account_info(),
+            to: self.escrow_account.to_account_info(),
+        };
+        CpiContext::new(self.system_program.to_account_info(), transfer_instruction)
+    }
 }
 
 pub fn initialize_transfer_sol(
@@ -103,16 +125,7 @@ pub fn initialize_transfer_sol(
     escrow_account.hash_of_secret = hash_of_secret;
     escrow_account.bump = ctx.bumps.escrow_account;
 
-    anchor_lang::system_program::transfer(
-        CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            anchor_lang::system_program::Transfer {
-                from: ctx.accounts.sender.to_account_info(),
-                to: escrow_account.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
+    anchor_lang::system_program::transfer(ctx.accounts.into_transfer_sol_context(), amount)?;
 
     Ok(())
 }
