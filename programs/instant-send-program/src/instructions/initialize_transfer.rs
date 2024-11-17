@@ -44,6 +44,7 @@ impl<'info> InitializeTransferSPL<'info> {
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
 
+    // REVIEW: should be claim_rent_from_sender
     pub fn cliam_rent_from_sender(&self) -> Result<()> {
         let rent = Rent::get()?;
         let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
