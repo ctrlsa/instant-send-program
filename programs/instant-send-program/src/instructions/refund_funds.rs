@@ -31,6 +31,7 @@ pub struct RefundFundsSPL<'info> {
 }
 
 impl<'info> RefundFundsSPL<'info> {
+    // REVIEW: I assume the secret is randomly generated, otherwise it would be better to use a hash and a salt
     pub fn verify_secret(&self, secret: &str) -> Result<()> {
         let provided_hash = {
             let mut hasher = Sha256::new();
@@ -122,6 +123,7 @@ impl<'info> RefundFundsSOL<'info> {
     }
 
     pub fn transfer_sol_back_to_sender(&self, amount: u64) -> Result<()> {
+        // REVIEW: this also does not work because you need to call the system program to transfer lamports
         **self.sender.to_account_info().try_borrow_mut_lamports()? += amount;
         **self
             .escrow_account

@@ -126,6 +126,7 @@ pub struct RedeemFundsSOL<'info> {
 }
 
 impl<'info> RedeemFundsSOL<'info> {
+    // REVIEW: I assume the secret is randomly generated, otherwise it would be better to use a hash and a salt
     pub fn verify_secret(&self, secret: &str) -> Result<()> {
         let provided_hash = {
             let mut hasher = Sha256::new();
@@ -140,6 +141,7 @@ impl<'info> RedeemFundsSOL<'info> {
     }
 
     pub fn transfer_sol_to_recipient(&self, amount: u64) -> Result<()> {
+        // REVIEW: you have to use the system program to transfer lamports, like you did in the initialize_transfer_spl instruction
         **self.recipient.to_account_info().try_borrow_mut_lamports()? += amount;
         **self.escrow_account.to_account_info().try_borrow_mut_lamports()? -= amount;
         Ok(())
@@ -166,6 +168,7 @@ pub fn redeem_funds_sol(ctx: Context<RedeemFundsSOL>, secret: String) -> Result<
 
     ctx.accounts.escrow_account.is_redeemed = true;
     ctx.accounts.transfer_sol_to_recipient(ctx.accounts.escrow_account.amount)?;
+    // REVIEW: after the transfer, the escrow account should be deleted
     // ctx.accounts.refund_remaining_lamports_to_sender()?;
 
     Ok(())
