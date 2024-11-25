@@ -7,13 +7,16 @@ skip-lint = false
 [programs.localnet]
 instant_send_program = "4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW"
 
+[programs.devnet]
+instant_send_program = "BCLTR5fuCWrMUWc75yKnG35mtrvXt6t2eLuPwCXA93oY"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "https://api.devnet.solana.com"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/instant-send-program.spec.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/instant-send-program2.spec.ts"
 test_generate = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/generate_secret.ts"

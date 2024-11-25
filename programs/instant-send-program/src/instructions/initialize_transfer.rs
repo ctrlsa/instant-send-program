@@ -1,7 +1,8 @@
 //file: src/instruction/initialize_transfer.rs
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+// use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked};
 
 use crate::{
     EscrowAccount, EscrowSOLAccount, ANCHOR_DISCRIMINATOR_SIZE, SEED_ESCROW_SOL, SEED_ESCROW_SPL,
@@ -19,15 +20,15 @@ pub struct InitializeTransferSPL<'info> {
         payer = sender,
         associated_token::mint = token_mint,
         associated_token::authority = escrow_account,
-        owner = token::ID,
+        associated_token::token_program = token_program
     )]
-    pub escrow_token_account: Account<'info, TokenAccount>,
-    #[account(mut, owner = token::ID)]
-    pub sender_token_account: Account<'info, TokenAccount>,
-    #[account(owner = token::ID)]
-    pub token_mint: Account<'info, Mint>,
+    pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, associated_token::mint = token_mint, associated_token::authority = sender, associated_token::token_program = token_program)]
+    pub sender_token_account: InterfaceAccount<'info, TokenAccount>,
+    #[account(mint::token_program = token_program)]
+    pub token_mint: InterfaceAccount<'info, Mint>,
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub rent: Sysvar<'info, Rent>,
 }
@@ -35,18 +36,20 @@ pub struct InitializeTransferSPL<'info> {
 impl<'info> InitializeTransferSPL<'info> {
     pub fn into_transfer_to_escrow_context(
         &self,
-    ) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
-        let cpi_accounts = Transfer {
+    ) -> CpiContext<'_, '_, '_, 'info, TransferChecked<'info>> {
+        let cpi_accounts = TransferChecked {
             from: self.sender_token_account.to_account_info(),
             to: self.escrow_token_account.to_account_info(),
             authority: self.sender.to_account_info(),
+            mint: self.token_mint.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
 
-    pub fn cliam_rent_from_sender(&self) -> Result<()> {
+    pub fn claim_rent_from_sender(&self) -> Result<()> {
         let rent = Rent::get()?;
-        let recipient_token_account_rent = rent.minimum_balance(TokenAccount::LEN);
+        let recipient_token_account_rent =
+            rent.minimum_balance(anchor_spl::token::TokenAccount::LEN);
 
         anchor_lang::system_program::transfer(
             CpiContext::new(
@@ -78,7 +81,11 @@ pub fn initialize_transfer_spl(
     escrow_account.hash_of_secret = hash_of_secret;
     escrow_account.bump = ctx.bumps.escrow_account;
 
-    token::transfer(ctx.accounts.into_transfer_to_escrow_context(), amount)?;
+    anchor_spl::token_interface::transfer_checked(
+        ctx.accounts.into_transfer_to_escrow_context(),
+        amount,
+        ctx.accounts.token_mint.decimals,
+    )?;
 
     //if you for some reason want to claim the rent for creating a token account for the reciever
     //ctx.accounts.claim_rent_from_sender()?;

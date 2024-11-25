@@ -7,7 +7,8 @@ pub mod state;
 pub use constants::*;
 use instructions::*;
 pub use state::*;
-declare_id!("4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW");
+//declare_id!("4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW");
+declare_id!("BCLTR5fuCWrMUWc75yKnG35mtrvXt6t2eLuPwCXA93oY");
 
 #[program]
 pub mod instant_send_program {

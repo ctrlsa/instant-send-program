@@ -20,13 +20,16 @@ import * as crypto from "crypto";
 import { Key } from "readline";
 
 const IDL = require("../target/idl/instant_send_program");
-const programAddress = new PublicKey(
-  "4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW"
-);
+// const programAddress = new PublicKey(
+//   "4khKXMz3ttSaoxuwJ6nB93SB2PSjvj3FZP4E1gCPGHKW"
+// );
+
+const programAddress = new PublicKey("BCLTR5fuCWrMUWc75yKnG35mtrvXt6t2eLuPwCXA93oY")
 const directory = path.join(__dirname);
 
-async function fundWalletFromDefaultWallet(provider: BankrunProvider, payerWallet: Keypair, toBeFundedWallet: Keypair, amount: number) {
-    const transaction = new anchor.web3.Transaction().add(
+// async function fundWalletFromDefaultWallet(provider: BankrunProvider, payerWallet: Keypair, toBeFundedWallet: Keypair, amount: number) {
+async function fundWalletFromDefaultWallet(provider: anchor.AnchorProvider, payerWallet: Keypair, toBeFundedWallet: Keypair, amount: number) {
+  const transaction = new anchor.web3.Transaction().add(
         anchor.web3.SystemProgram.transfer({
             fromPubkey: payerWallet.publicKey,
             toPubkey: toBeFundedWallet.publicKey,
@@ -38,12 +41,27 @@ async function fundWalletFromDefaultWallet(provider: BankrunProvider, payerWalle
     console.log("Funded senderWallet with 2 SOL");
 }
 
+// function loadKeypair(filename: string): Keypair {
+//   const filePath = path.join(directory, `${filename}.json`);
+//   console.log(filePath)
+//   const secretKey = new Uint8Array(
+//     JSON.parse(fs.readFileSync(filePath, "utf-8"))
+//   );
+//   return Keypair.fromSecretKey(secretKey);
+// }
 function loadKeypair(filename: string): Keypair {
   const filePath = path.join(directory, `${filename}.json`);
-  const secretKey = new Uint8Array(
-    JSON.parse(fs.readFileSync(filePath, "utf-8"))
-  );
-  return Keypair.fromSecretKey(secretKey);
+  console.log("Trying to load keypair from:", filePath); // Log the file path
+  try {
+    const secretKey = new Uint8Array(
+      JSON.parse(fs.readFileSync(filePath, "utf-8"))
+    );
+    console.log("File content loaded successfully."); // Log if file is read
+    return Keypair.fromSecretKey(secretKey);
+  } catch (error) {
+    console.error("Error loading keypair:", error.message);
+    throw error; // Re-throw to let the test fail
+  }
 }
 // const generateSecret = (length: number = 32): string => {
 //     return crypto.randomBytes(length).toString("hex"); // Generates a hexadecimal string
@@ -63,19 +81,32 @@ describe("Instant Transfer", () => {
   const centralFeePayerWallet = loadKeypair("central_fee_payer_wallet");
   
   let context;
-  let provider: BankrunProvider;
+  let provider: anchor.AnchorProvider;
   let transferProgram: Program<InstantSendProgram>;
   let payer;
-  let banksClient: BanksClient;
+  //let banksClient: BanksClient;
   let tokenMint: PublicKey;
   let senderTokenAccount: PublicKey;
   let defaultWallet: Keypair;
   before("set Init vars", async () => {
     
-    context = await startAnchor("", [{ name: "instant_send_program", programId: programAddress }], []);
-    ({ banksClient, payer } = context);
-    defaultWallet = payer;
-    provider = new BankrunProvider(context);
+    // context = await startAnchor("", [{ name: "instant_send_program", programId: programAddress }], []);
+    // ({ banksClient, payer } = context);
+    // defaultWallet = payer;
+    // provider = new BankrunProvider(context);
+    // const connection = new Connection(anchor.web3.clusterApiUrl("devnet"), "confirmed");
+    // const wallet = anchor.AnchorProvider.local().wallet;
+
+    // const provider = new anchor.AnchorProvider(connection, wallet, {});
+    provider = anchor.AnchorProvider.env();
+    anchor.setProvider(provider);
+
+    const connection = provider.connection;
+    const wallet = provider.wallet;
+
+    // Use the payer from the provider
+    payer = wallet;
+
     
     await fundWalletFromDefaultWallet(provider, defaultWallet, senderWallet, 2);
     await fundWalletFromDefaultWallet(provider, defaultWallet, centralFeePayerWallet, 1);
@@ -149,6 +180,7 @@ describe("Instant Transfer", () => {
       IDL,
       provider,
     );
+
   });
 
   let secret;
@@ -172,7 +204,7 @@ describe("Instant Transfer", () => {
 
   //it.only
   it.skip("Initialize Transfer SOL", async () => {
-    const amount = new anchor.BN(0.2 * anchor.web3.LAMPORTS_PER_SOL); // 0.2 SOL
+    const amount = new anchor.BN(0.1 * anchor.web3.LAMPORTS_PER_SOL); // 0.1 SOL
     console.log("this is the amount: ", amount);
     const expirationTime = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
     console.log("this is the expirationTime", expirationTime);
@@ -206,7 +238,7 @@ describe("Instant Transfer", () => {
     
   });
 
-  it("Initialize Transger SPL", async () => {
+  it.skip("Initialize Transger SPL", async () => {
     const amount = new anchor.BN(0.2 * anchor.web3.LAMPORTS_PER_SOL); // 0.2 SOL
     console.log("this is the amount: ", amount);
     const expirationTime = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
@@ -262,7 +294,7 @@ describe("Instant Transfer", () => {
  
     });
 
-  it("Redeem funds from Escrow Wallet SPL", async() => {
+  it.skip("Redeem funds from Escrow Wallet SPL", async() => {
     const [escrowAccountPDASpl, escrowAccountBumpSpl] = await anchor.web3.PublicKey.findProgramAddressSync(
         [SEED_ESCROW_SPL, hashOfSecret],
         programAddress
